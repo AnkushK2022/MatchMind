@@ -3,14 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Colour Match Challenge</title>
+    <title>Color Match Challenge</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-    
-    <!-- Using Firebase V8 Namespaced Scripts for stability in a global HTML file -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -107,18 +102,16 @@
     <!-- Global App Container -->
     <div id="app-container" class="w-full max-w-4xl min-h-[600px] game-card rounded-xl p-6 relative flex flex-col items-center">
 
-        <!-- Logo/Auth/Loading Area (Top Left) -->
-        <div id="logo-header" class="absolute top-4 left-4 flex items-center space-x-2 opacity-0 transition-all duration-1000">
+        <!-- Logo Header (Simplified) -->
+        <div id="logo-header" class="absolute top-4 left-4 flex items-center space-x-2">
             <svg class="w-6 h-6 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
             </svg>
             <span class="text-sm font-semibold text-indigo-400">MatchMind</span>
-            <div id="loading-indicator" class="text-sm text-gray-400">Initializing...</div>
-            <div id="auth-status" class="text-xs text-gray-500">User ID: N/A</div>
         </div>
 
         <!-- Dynamic Screen Content -->
-        <div id="screen-container" class="w-full flex justify-center mt-16 md:mt-20">
+        <div id="screen-container" class="w-full flex justify-center mt-12 md:mt-20">
             <!-- Screens will be dynamically added/shown here -->
         </div>
     </div>
@@ -147,127 +140,9 @@
 
     <!-- Main Game Script -->
     <script>
-        // --- Firebase V8 Setup (Globally Namespaced) ---
-        
-        // V8 uses firebase.firestore.setLogLevel
-        if (typeof firebase !== 'undefined' && typeof firebase.firestore !== 'undefined' && typeof firebase.firestore.setLogLevel === 'function') {
-            firebase.firestore.setLogLevel('debug');
-        } else {
-             console.warn("setLogLevel is not globally available.");
-        }
-
-        // ----------------------------------------------------------------------
-        // --- FIREBASE CONFIGURATION CHECK ---
-        // Checks for Canvas environment variables and falls back to placeholders.
-        // ----------------------------------------------------------------------
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'color-match-app';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        let firebaseConfig = { apiKey: null }; // Default minimum config
-
-        try {
-            if (typeof __firebase_config !== 'undefined') {
-                // Running in the Canvas environment, use injected config
-                firebaseConfig = JSON.parse(__firebase_config);
-            } else {
-                 // Running in a standalone HTML file, use placeholders
-                firebaseConfig = {
-                    apiKey: "AIzaSyAiMQZH8GPgk1KakMFOc0cuE_dCMsfhal4", 
-                    authDomain: "matchmind-25601.firebaseapp.com",
-                    projectId: "matchmind-25601",
-                    storageBucket: "matchmind-25601.firebasestorage.app",
-                    messagingSenderId: "1010119481705",
-                    appId: "1:1010119481705:web:fdc7b902027b06af6585f8"
-                };
-            }
-        } catch(e) {
-            console.error("Failed to parse __firebase_config:", e);
-        }
-        // ----------------------------------------------------------------------
-        // --- END: CONFIG BLOCK ---
-        // ----------------------------------------------------------------------
-
-
-        let db, auth, userId = null;
-        let isAuthReady = false; 
-        
-        let scoreUnsubscribe = null;
-
-        /**
-         * Helper to get the V8 Firestore Document Reference based on V9 path logic.
-         */
-        const USER_STATS_REF = (uid) => {
-            if (!db) return null;
-            // Corresponds to: /artifacts/{appId}/users/{userId}/color_match_stats/game_data
-            return db.collection('artifacts').doc(appId)
-                     .collection('users').doc(uid)
-                     .collection('color_match_stats').doc('game_data');
-        }
-
-        /**
-         * Initializes Firebase and authenticates the user using V8 namespaced methods.
-         */
-        async function initFirebase() {
-            // Check for V8 global object
-            if (typeof firebase === 'undefined' || typeof firebase.initializeApp === 'undefined') {
-                console.error("Firebase functions are not available. Check script tag loading.");
-                userId = crypto.randomUUID();
-                document.getElementById('auth-status').textContent = `Anon ID: ${userId.substring(0, 8)}... (No DB)`;
-                isAuthReady = true;
-                return;
-            }
-
-            // Check if configuration is missing the key. If so, bypass DB initialization.
-            if (!firebaseConfig.apiKey) {
-                 console.warn("Database connection skipped: Firebase API Key is missing. Game runs in memory-only mode (scores will not save).");
-                 document.getElementById('loading-indicator').textContent = 'DB Disabled';
-                 userId = crypto.randomUUID();
-                 document.getElementById('auth-status').textContent = `Anon ID: ${userId.substring(0, 8)}... (No DB)`;
-                 isAuthReady = true;
-                 return; // Exit successfully without failing
-            }
-
-
-            try {
-                // Initialize V8 App
-                const app = firebase.initializeApp(firebaseConfig);
-                auth = app.auth();
-                db = app.firestore();
-                
-                document.getElementById('loading-indicator').textContent = 'Authenticating...';
-
-                // V8 uses onAuthStateChanged from the auth instance
-                await new Promise(resolve => {
-                    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-                        if (user) {
-                            userId = user.uid;
-                            document.getElementById('auth-status').textContent = `User ID: ${userId.substring(0, 8)}...`;
-                        } else if (!userId) {
-                            if (initialAuthToken) {
-                                // V8: auth.signInWithCustomToken() - Use custom token if available
-                                await auth.signInWithCustomToken(initialAuthToken);
-                            } else {
-                                // V8: auth.signInAnonymously() - Fallback for local testing if key is present
-                                await auth.signInAnonymously();
-                            }
-                        }
-                        isAuthReady = true;
-                        resolve();
-                        unsubscribe(); // Stop listening after the initial state is resolved
-                    });
-                });
-            } catch (error) {
-                console.error("Firebase initialization or authentication failed. Check your config/rules:", error);
-                document.getElementById('loading-indicator').textContent = 'Error!';
-                if (!userId) {
-                    userId = crypto.randomUUID();
-                    document.getElementById('auth-status').textContent = `Anon ID: ${userId.substring(0, 8)}... (Error)`;
-                    isAuthReady = true;
-                }
-            }
-        }
-
         // --- Game Constants and State ---
+
+        const LOCAL_STORAGE_KEY = 'matchmind_stats';
 
         const COLOR_MAP = [
             { name: "White", hex: "#FFFFFF", key: '1' },
@@ -287,21 +162,67 @@
             isMusicOn: true,
             score: 0,
             lives: 3,
-            difficultyLevel: 1, // Determines timer delay
-            baseDelay: 2000, // 2 seconds (2000ms)
+            difficultyLevel: 1, 
+            baseDelay: 2000, 
             currentDelay: 2000,
             roundsSinceDifficultyIncrease: 0,
-            currentRound: null, // { name: "Red", hex: "#FF0000" }
-            gameTimer: null, // setInterval handle
+            currentRound: null, 
+            gameTimer: null, 
             roundStartTime: 0,
-            reactionTimes: [], // Temp storage for current session
+            reactionTimes: [], 
             userHighScores: {
                 highScore: 0,
-                averageReactionTime: 0
+                successfulReactionTimes: [] // Stores all reaction times for average calculation
             },
             isInputLocked: false, 
             isRoundResolved: false, 
         };
+
+        // --- Local Storage Persistence Functions ---
+
+        /** Loads user high score and reaction times from Local Storage. */
+        function loadScoresLocal() {
+            try {
+                const data = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (data) {
+                    const parsedData = JSON.parse(data);
+                    gameState.userHighScores.highScore = parsedData.highScore || 0;
+                    gameState.userHighScores.successfulReactionTimes = parsedData.successfulReactionTimes || [];
+                }
+            } catch (e) {
+                console.error("Error loading scores from Local Storage:", e);
+                // Reset to default on error
+                gameState.userHighScores.highScore = 0;
+                gameState.userHighScores.successfulReactionTimes = [];
+            }
+        }
+
+        /** Saves the current high score and reaction times to Local Storage. */
+        function saveScoresLocal() {
+            try {
+                // Ensure we only store the necessary persistence data
+                const dataToSave = {
+                    highScore: gameState.userHighScores.highScore,
+                    successfulReactionTimes: gameState.userHighScores.successfulReactionTimes
+                };
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dataToSave));
+                console.log("Scores saved to Local Storage.");
+            } catch (e) {
+                console.error("Error saving scores to Local Storage:", e);
+            }
+        }
+
+        /** Resets all score data in Local Storage. */
+        function resetScoresLocal() {
+            try {
+                gameState.userHighScores.highScore = 0;
+                gameState.userHighScores.successfulReactionTimes = [];
+                saveScoresLocal();
+                console.log("Scores reset in Local Storage.");
+            } catch (e) {
+                console.error("Error resetting scores in Local Storage:", e);
+            }
+        }
 
         // --- Audio Setup (Tone.js) ---
 
@@ -412,7 +333,17 @@
             updateOptionsUI();
         }
 
-        // --- UI Rendering Functions (omitted for brevity, no changes here) ---
+        // --- UI Rendering Functions ---
+        
+        /** Calculates the average reaction time from the stored array. */
+        function calculateAverageReactionTime() {
+            const times = gameState.userHighScores.successfulReactionTimes;
+            if (times.length === 0) return 0;
+            const sum = times.reduce((a, b) => a + b, 0);
+            return (sum / times.length).toFixed(2);
+        }
+
+
         const screens = {
             mainMenu: (
                 `<div class="flex flex-col space-y-4 w-full max-w-sm p-4 text-white">
@@ -460,15 +391,15 @@
                         <p class="text-sm text-gray-400 mt-1">Based on all your successful matches.</p>
                     </div>
                     <!-- Button now calls resetScores, which triggers the confirmation modal -->
-                    <button class="px-4 py-2 bg-red-600 text-white font-bold rounded-lg transition-all duration-300 hover:bg-red-700 active:bg-red-800" onclick="window.resetScores()">Reset Scores</button>
+                    <button class="px-4 py-2 bg-red-600 text-white font-bold rounded-lg transition-all duration-300 hover:bg-red-700 active:bg-red-800" onclick="window.showModal('confirmReset')">Reset Scores</button>
                     <button class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-xl transition-all duration-300 hover:bg-indigo-700 hover:scale-[1.05] hover:shadow-2xl hover:shadow-indigo-500/50 active:bg-indigo-800 focus:outline-none focus:ring-4 focus:ring-indigo-500 mt-4" onclick="window.showScreen('mainMenu')">Back to Menu</button>
                 </div>`
             ),
             game: (
                 `<div class="w-full flex flex-col items-center">
                     <div class="w-full flex justify-between items-center mb-6 px-2">
-                        <div class="text-2xl font-bold text-white">Score: <span id="game-score">0</span></div>
-                        <div class="text-2xl font-bold text-white">Lives: <span id="game-lives" class="text-red-400">❤️❤️❤️</span></div>
+                        <div class="flex flex-col md:flex-row items-center justify-center text-2xl font-bold text-white">Score: <span id="game-score">0</span></div>
+                        <div class="flex flex-col md:flex-row items-center justify-center text-2xl font-bold text-white">Lives: <span id="game-lives" class="text-red-400">❤️❤️❤️</span></div>
                     </div>
 
                     <!-- Get Colour Window -->
@@ -481,7 +412,7 @@
                     <div id="color-buttons-grid" class="grid grid-cols-3 gap-4 w-full max-w-md">
                         ${COLOR_MAP.map(color => `
                             <button
-                                class="color-button w-full h-20 md:h-24 rounded-xl border-4 border-gray-600 flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                                class="color-button w-full h-20 md:h-24 rounded-xl border-4 border-gray-600 flex flex-col md:flex-row items-center justify-center text-white font-bold text-lg shadow-lg"
                                 style="background-color: ${color.hex}; color: ${isDark(color.hex) ? '#fff' : '#000'};"
                                 data-color="${color.name}"
                                 onclick="window.checkMatch('${color.name}')"
@@ -502,18 +433,13 @@
             const r = parseInt(hex.substring(1, 3), 16);
             const g = parseInt(hex.substring(3, 5), 16);
             const b = parseInt(hex.substring(5, 7), 16);
+            // ITU-R BT.709 Luma calculation
             const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b + 0; 
             return luma < 120; 
         }
 
         /** Renders the specified screen content. */
         function showScreen(name) {
-            if (gameState.screen === 'highScore' && name !== 'highScore' && scoreUnsubscribe) {
-                scoreUnsubscribe();
-                scoreUnsubscribe = null;
-                console.log("Unsubscribed from score updates.");
-            }
-            
             gameState.screen = name;
             const container = document.getElementById('screen-container');
             container.innerHTML = screens[name];
@@ -521,11 +447,25 @@
             if (name === 'options') {
                 updateOptionsUI();
             } else if (name === 'highScore') {
-                loadScores();
-            } else if (name === 'game') {
-                // Game setup happens in startGame()
+                updateHighScoreUI();
             }
         }
+        
+        /** Updates the High Score UI elements. */
+        function updateHighScoreUI() {
+            loadScoresLocal();
+            const highScoreEl = document.getElementById('high-score-display');
+            const avgTimeEl = document.getElementById('avg-reaction-time-display');
+            const avgTime = calculateAverageReactionTime();
+
+            if (highScoreEl) {
+                highScoreEl.textContent = gameState.userHighScores.highScore;
+            }
+            if (avgTimeEl) {
+                avgTimeEl.textContent = `${avgTime} ms`;
+            }
+        }
+
 
         /** Updates the text/state of the Options toggles. */
         function updateOptionsUI() {
@@ -572,7 +512,7 @@
                     contentHTML = `
                         <h3 class="text-2xl font-bold text-indigo-400 mb-4">About MatchMind</h3>
                         <p class="text-gray-300 mb-4">
-                            Developed by <strong> Ankush Shingari</strong> for the Color Match Challenge project.
+                            Developed by <strong>Ankush Shingari</strong> for the Color Match Challenge project.
                         </p>
                         <p class="text-gray-300">
                             A game of speed, focus, and visual acuity. Enjoy the challenge!
@@ -643,17 +583,12 @@
 
         /** Initializes the game state and starts the first round. */
         function startGame() {
-            if (!isAuthReady) {
-                // Should only happen if initFirebase had a major error or was bypassed
-                console.warn("Authentication not ready. Game starting in in-memory mode.");
-            }
-
             showScreen('game');
             gameState.score = 0;
             gameState.lives = 3;
             gameState.currentDelay = gameState.baseDelay;
             gameState.roundsSinceDifficultyIncrease = 0;
-            gameState.reactionTimes = [];
+            gameState.reactionTimes = []; // Reset reaction times for the current session
             gameState.isInputLocked = false; 
             gameState.isRoundResolved = false; 
             
@@ -728,7 +663,7 @@
             const reactionTime = performance.now() - gameState.roundStartTime;
 
             gameState.score += 1;
-            gameState.reactionTimes.push(reactionTime);
+            gameState.reactionTimes.push(reactionTime); // Temp storage for current session
 
             const targetWindow = document.getElementById('get-color-window');
             targetWindow.classList.add('feedback-correct');
@@ -822,146 +757,47 @@
         function gameOver() {
             stopGame();
             playSound('gameover');
-            saveScores();
+            
+            // Update local storage data based on this game session
+            const isNewHighScore = gameState.score > gameState.userHighScores.highScore;
+            if (isNewHighScore) {
+                gameState.userHighScores.highScore = gameState.score;
+            }
+            
+            // Append successful reaction times from this session to the persistent array
+            gameState.userHighScores.successfulReactionTimes = 
+                gameState.userHighScores.successfulReactionTimes.concat(gameState.reactionTimes);
+            
+            // Limit array size to prevent bloat (e.g., last 200 rounds)
+            if (gameState.userHighScores.successfulReactionTimes.length > 200) {
+                gameState.userHighScores.successfulReactionTimes = 
+                    gameState.userHighScores.successfulReactionTimes.slice(
+                        gameState.userHighScores.successfulReactionTimes.length - 200
+                    );
+            }
+
+            saveScoresLocal();
             gameState.screen = 'gameover_modal';
             showModal('gameOver');
         }
 
-        // --- Firestore Management (V8 Methods) ---
-
-        /** Loads user high score and average reaction time from Firestore. */
-        async function loadScores() {
-            if (!isAuthReady || !userId || !db) {
-                const highScoreEl = document.getElementById('high-score-display');
-                const avgTimeEl = document.getElementById('avg-reaction-time-display');
-                if (highScoreEl) highScoreEl.textContent = 'DB Disabled';
-                if (avgTimeEl) avgTimeEl.textContent = 'No Save';
-                return;
-            }
-
-            if (scoreUnsubscribe) {
-                scoreUnsubscribe();
-            }
-
-            try {
-                const docRef = USER_STATS_REF(userId);
-                
-                // V8: docRef.onSnapshot()
-                scoreUnsubscribe = docRef.onSnapshot((docSnap) => {
-                    const data = docSnap.exists ? docSnap.data() : { highScore: 0, reactionTimes: [] };
-                    
-                    const high = data.highScore || 0;
-                    const times = data.reactionTimes || [];
-                    const avgTime = times.length > 0
-                        ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(2)
-                        : 0;
-                    
-                    gameState.userHighScores.highScore = high;
-                    gameState.userHighScores.averageReactionTime = avgTime;
-
-                    if (gameState.screen === 'highScore') {
-                        const highScoreEl = document.getElementById('high-score-display');
-                        const avgTimeEl = document.getElementById('avg-reaction-time-display');
-                        
-                        if (highScoreEl) {
-                            highScoreEl.textContent = high;
-                        }
-                        if (avgTimeEl) {
-                            avgTimeEl.textContent = `${avgTime} ms`;
-                        }
-                    }
-                }, (error) => {
-                    console.error("Error listening to Firestore scores:", error);
-                });
-
-            } catch (error) {
-                console.error("Error accessing Firestore to load scores:", error);
-                if (gameState.screen === 'highScore') {
-                    const highScoreEl = document.getElementById('high-score-display');
-                    const avgTimeEl = document.getElementById('avg-reaction-time-display');
-                    if (highScoreEl) highScoreEl.textContent = 'Error';
-                    if (avgTimeEl) avgTimeEl.textContent = 'Error';
-                }
-            }
-        }
-
-        /** Saves the current game score and updates average reaction time. */
-        async function saveScores() {
-            if (!isAuthReady || !userId || !db) return;
-
-            const docRef = USER_STATS_REF(userId);
-            
-            const isNewHighScore = gameState.score > gameState.userHighScores.highScore;
-
-            try {
-                // V8: docRef.get()
-                const docSnap = await docRef.get();
-                const currentData = docSnap.exists ? docSnap.data() : { highScore: 0, reactionTimes: [] };
-
-                let updatedReactionTimes = currentData.reactionTimes.concat(gameState.reactionTimes);
-                
-                if (updatedReactionTimes.length > 100) {
-                    updatedReactionTimes = updatedReactionTimes.slice(updatedReactionTimes.length - 100);
-                }
-
-                const updateData = {
-                    highScore: isNewHighScore ? gameState.score : currentData.highScore,
-                    reactionTimes: updatedReactionTimes
-                };
-
-                // V8: docRef.set()
-                await docRef.set(updateData, { merge: true });
-                console.log("Score and Reaction times saved/updated successfully.");
-
-            } catch (error) {
-                console.error("Error saving score to Firestore:", error);
-            }
-        }
-
         /** Performs the actual score reset after user confirmation. */
-        async function performScoreReset() {
-             if (!isAuthReady || !userId || !db) {
-                 window.closeModal();
-                 return;
-             }
-
-             const docRef = USER_STATS_REF(userId);
-             try {
-                // V8: docRef.set()
-                await docRef.set({ highScore: 0, reactionTimes: [] }, { merge: false });
-                console.log("Scores reset successfully.");
-
-                window.closeModal();
-                if (gameState.screen === 'highScore') {
-                    loadScores(); 
-                }
-             } catch (error) {
-                 console.error("Error resetting scores:", error);
-                 window.closeModal();
+        function performScoreReset() {
+             resetScoresLocal();
+             closeModal();
+             // Reload the High Score screen to show zeros
+             if (gameState.screen === 'highScore') {
+                 updateHighScoreUI(); 
              }
         }
-        
-        /** Shows the confirmation modal before calling the reset function. */
-        function resetScores() {
-            if (!db) {
-                showModal('about'); 
-                document.getElementById('modal-content').querySelector('h3').textContent = "Database Disabled";
-                document.getElementById('modal-content').querySelector('p').textContent = "You are currently running in a mode where scores cannot be saved or reset.";
-                return;
-            }
-            window.showModal('confirmReset');
-        }
-
 
         // --- Startup and Shutter Sequence ---
 
-        window.onload = async function() {
-            // 1. Initialize Firebase and authenticate
-            document.getElementById('loading-indicator').textContent = 'Connecting...';
-            await initFirebase();
-            document.getElementById('loading-indicator').textContent = 'Ready.';
+        window.onload = function() {
+            // 1. Load scores from Local Storage immediately
+            loadScoresLocal();
 
-            // 2. Initialize Tone.js properties now that objects are guaranteed to be fully defined
+            // 2. Initialize Tone.js properties
             initializeToneProperties();
 
             // 3. Animate logo
@@ -1000,7 +836,6 @@
         window.checkMatch = checkMatch;
         window.toggleSound = toggleSound;
         window.toggleMusic = toggleMusic;
-        window.resetScores = resetScores; 
         window.performScoreReset = performScoreReset; 
 
         window.simulatedExit = () => {
